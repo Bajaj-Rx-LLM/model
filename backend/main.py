@@ -27,8 +27,11 @@ from models import (
     QueryResponse, 
     UploadResponse, 
     ErrorResponse,
+    PolicyQuestionsRequest,
+    PolicyQuestionsResponse,
 )
 from services import chroma_service, ingestion_service
+from services.llm_service import llm_service
 from agents import coordinator
 
 # Configure logging
@@ -264,6 +267,68 @@ async def query_documents(request: QueryRequest) -> QueryResponse:
     except Exception as e:
         logger.error(f"Query processing failed: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Query processing failed: {str(e)}")
+
+# Policy Questions endpoint
+@app.post("/policy-questions/", response_model=PolicyQuestionsResponse, tags=["Insurance Policy"])
+async def answer_policy_questions(request: PolicyQuestionsRequest) -> PolicyQuestionsResponse:
+    """
+    Answer specific National Parivar Mediclaim Plus Policy questions.
+    
+    This endpoint is designed to handle structured policy questions and return
+    detailed answers with confidence scores and inference explanations.
+    
+    Returns:
+    - Detailed answers to each question
+    - Confidence scores (0.0-1.0) for each answer
+    - Inference explanations showing reasoning
+    - Overall processing metrics
+    """
+    try:
+        start_time = time.time()
+        logger.info(f"Processing {len(request.questions)} policy questions...")
+        
+        # Validate request
+        if not request.questions:
+            raise HTTPException(status_code=400, detail="Questions list cannot be empty")
+        
+        # Get context from vector database if requested
+        context_chunks = []
+        if request.use_context:
+            try:
+                # Search for policy-related documents (reduced to 5 for efficiency)
+                search_results = await chroma_service.search_similar(
+                    query="National Parivar Mediclaim Plus Policy insurance coverage benefits",
+                    n_results=5
+                )
+                context_chunks = [result.content for result in search_results]
+                logger.info(f"Retrieved {len(context_chunks)} context chunks from database")
+            except Exception as e:
+                logger.warning(f"Failed to retrieve context from database: {e}")
+        
+        # Process questions through LLM service
+        result = await llm_service.answer_policy_questions(
+            questions=request.questions,
+            context_chunks=context_chunks if context_chunks else None
+        )
+        
+        processing_time = time.time() - start_time
+        average_confidence = sum(result["confidence_scores"]) / len(result["confidence_scores"])
+        
+        logger.info(f"Policy questions processed in {processing_time:.2f}s with avg confidence: {average_confidence:.2f}")
+        
+        return PolicyQuestionsResponse(
+            answers=result["answers"],
+            confidence_scores=result["confidence_scores"],
+            inferences=result["inferences"],
+            average_confidence=average_confidence,
+            processing_time=processing_time
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Policy questions processing failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Policy questions processing failed: {str(e)}")
 
 # System status endpoint
 @app.get("/status/", tags=["System"])
