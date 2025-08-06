@@ -51,27 +51,72 @@ class LLMService:
             logger.error(f"Failed to initialize LLM client: {str(e)}")
             self.client = None
 
-    async def generate_simple_answer(self, question: str, context_chunks: List[str]) -> str:
+#     async def generate_simple_answer(self, question: str, context_chunks: List[str]) -> str:
+#         if not self.client:
+#             error_msg = "LLM client is not initialized. Please check your .env configuration and server logs."
+#             logger.error(error_msg)
+#             return error_msg
+#         try:
+#             context = "\n\n".join(context_chunks)
+#             system_prompt = """You are a certified legal policy advisor and expert document analyst. Your task is to answer the user's question using only the information available in the provided document context. Do not rely on prior knowledge or outside information.
+# Respond clearly, concisely, and professionally using formal legal tone when appropriate:
+# 	•	Use direct, factual language.
+# 	•	Reference specific clauses, limits, or terms from the document when applicable.
+# 	•	If the document clearly lacks the information required to answer the question, state: “The information is not available in the document.”
+# Do not include any explanation, markdown, or extra commentary — only respond with the direct answer to the question."""
+            
+#             human_prompt = f"""CONTEXT:\n{context}\n\nQUESTION:\n{question}\n\nANSWER:"""
+            
+#             response = await asyncio.to_thread(
+#                 self.client.invoke,
+#                 [SystemMessage(content=system_prompt), HumanMessage(content=human_prompt)]
+#             )
+#             return response.content.strip()
+#         except Exception as e:
+#             logger.error(f"Failed to generate simple answer: {str(e)}")
+#             return f"An error occurred while generating the answer: {e}"
+
+    async def generate_batch_answers(self, questions: List[str], context_chunks: List[str]) -> List[str]:
         if not self.client:
             error_msg = "LLM client is not initialized. Please check your .env configuration and server logs."
             logger.error(error_msg)
-            return error_msg
+            return [error_msg] * len(questions)
         try:
             context = "\n\n".join(context_chunks)
-            system_prompt = """You are an expert AI assistant. Your task is to answer the user's question based *only* on the provided document context.
-Be concise and directly answer the question. Do not add any extra information or introductory phrases like 'Based on the context...'.
-If the context does not contain the answer, state that the information is not available in the document."""
+            system_prompt = """You are an expert AI assistant. Your task is to answer multiple questions based only on the provided document context.
+Answer each question concisely and directly. Do not add any extra information or introductory phrases like 'Based on the context...'.
+If the context does not contain the answer for a specific question, state that the information is not available in the document for that question.
+Format your response as a numbered list with each answer on a new line."""
             
-            human_prompt = f"""CONTEXT:\n{context}\n\nQUESTION:\n{question}\n\nANSWER:"""
+            questions_text = "\n".join([f"{i+1}. {q}" for i, q in enumerate(questions)])
+            human_prompt = f"""CONTEXT:\n{context}\n\nQUESTIONS:\n{questions_text}\n\nANSWERS:"""
             
             response = await asyncio.to_thread(
                 self.client.invoke,
                 [SystemMessage(content=system_prompt), HumanMessage(content=human_prompt)]
             )
-            return response.content.strip()
+            
+            # Parse the response to extract individual answers
+            response_text = response.content.strip()
+            lines = response_text.split('\n')
+            answers = []
+            
+            for line in lines:
+                line = line.strip()
+                if line and any(line.startswith(f"{i+1}.") for i in range(len(questions))):
+                    # Remove the number prefix
+                    answer = line.split('.', 1)[1].strip() if '.' in line else line
+                    answers.append(answer)
+            
+            # Ensure we have the correct number of answers
+            while len(answers) < len(questions):
+                answers.append("Unable to extract answer from response.")
+            
+            return answers[:len(questions)]
+            
         except Exception as e:
-            logger.error(f"Failed to generate simple answer: {str(e)}")
-            return f"An error occurred while generating the answer: {e}"
+            logger.error(f"Failed to generate batch answers: {str(e)}")
+            return [f"An error occurred while generating the answer: {e}"] * len(questions)
 
 # Global LLM service instance
 llm_service = LLMService()

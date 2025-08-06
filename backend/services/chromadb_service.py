@@ -1,3 +1,4 @@
+import asyncio
 import os
 import logging
 from typing import List, Dict, Any, Optional
@@ -83,7 +84,7 @@ class ChromaDBService:
     async def search_similar(
         self, 
         query: str, 
-        n_results: int = 5,
+        n_results: int = 10,
         where_filter: Optional[Dict[str, Any]] = None
     ) -> List[SearchResult]:
         """Search for similar documents"""
@@ -216,6 +217,96 @@ class ChromaDBService:
         except Exception as e:
             logger.error(f"Failed to reset collection: {str(e)}")
             return False
+        
+
+    async def delete_by_filter(self, where_filter: dict) -> int:
+        """Delete documents matching the filter"""
+        try:
+            # Get documents to delete first to count them
+            results = await asyncio.to_thread(
+                self.collection.get,
+                where=where_filter
+            )
+            count = len(results['ids'])
+            
+            if count > 0:
+                # Delete the documents
+                await asyncio.to_thread(
+                    self.collection.delete,
+                    where=where_filter
+                )
+                logger.info(f"Deleted {count} chunks matching filter: {where_filter}")
+            
+            return count
+        except Exception as e:
+            logger.error(f"Failed to delete by filter {where_filter}: {e}")
+            raise
+
+    async def clear_collection(self) -> int:
+        """Clear entire collection"""
+        try:
+            # Get all documents first to count them
+            results = await asyncio.to_thread(self.collection.get)
+            count = len(results['ids'])
+            
+            if count > 0:
+                # Delete all documents
+                await asyncio.to_thread(
+                    self.collection.delete,
+                    where={}
+                )
+                logger.info(f"Cleared entire collection: {count} chunks deleted")
+            
+            return count
+        except Exception as e:
+            logger.error(f"Failed to clear collection: {e}")
+            raise
+
+    async def get_all_chunks(self, limit: Optional[int] = None, where_filter: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Get all chunks from the collection with optional filtering and limiting"""
+        try:
+            # Get chunks with optional filter
+            if limit:
+                results = await asyncio.to_thread(
+                    self.collection.get,
+                    where=where_filter,
+                    limit=limit,
+                    include=["documents", "metadatas"]
+                )
+            else:
+                results = await asyncio.to_thread(
+                    self.collection.get,
+                    where=where_filter,
+                    include=["documents", "metadatas"]
+                )
+            
+            chunks_data = []
+            if results['ids']:
+                for i in range(len(results['ids'])):
+                    chunk_data = {
+                        "chunk_id": results['ids'][i],
+                        "content": results['documents'][i],
+                        "metadata": results['metadatas'][i] or {},
+                        "content_preview": results['documents'][i][:200] + "..." if len(results['documents'][i]) > 200 else results['documents'][i]
+                    }
+                    chunks_data.append(chunk_data)
+            
+            return {
+                "total_chunks": len(chunks_data),
+                "chunks": chunks_data,
+                "collection_info": {
+                    "name": self.collection.name,
+                    "total_count": self.collection.count()
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to get chunks: {e}")
+            raise
+
+    async def get_chunks_by_document(self, document_id: str, limit: Optional[int] = None) -> Dict[str, Any]:
+        """Get all chunks for a specific document"""
+        return await self.get_all_chunks(limit=limit, where_filter={"document_id": document_id})
 
 # Global ChromaDB service instance
 chroma_service = ChromaDBService()

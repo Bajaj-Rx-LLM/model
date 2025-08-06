@@ -8,6 +8,7 @@ import sys
 import os
 import time
 from contextlib import asynccontextmanager
+from typing import Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -102,6 +103,92 @@ async def run_hackathon_submission(request: HackRXRequest):
             status_code=500,
             detail=f"An unexpected internal error occurred: {str(e)}"
         )
+
+
+@app.delete("/documents/{document_url:path}")
+async def delete_document_cache(document_url: str):
+    """Delete cached document chunks for reprocessing with new parameters"""
+    try:
+        doc_id = hackrx_service._create_document_id(document_url)
+        
+        # Delete all chunks for this document
+        deleted_count = await chroma_service.delete_by_filter({"document_id": doc_id})
+        
+        return {
+            "message": f"Successfully deleted cached chunks for document",
+            "document_id": doc_id[:10] + "...",
+            "deleted_chunks": deleted_count
+        }
+    except Exception as e:
+        logger.error(f"Failed to delete document cache: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete cache: {str(e)}")
+
+@app.delete("/documents/clear-all")
+async def clear_all_cache():
+    """Clear entire document cache"""
+    try:
+        deleted_count = await chroma_service.clear_collection()
+        return {
+            "message": "Successfully cleared all cached documents",
+            "deleted_chunks": deleted_count
+        }
+    except Exception as e:
+        logger.error(f"Failed to clear cache: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to clear cache: {str(e)}")
+
+
+@app.get("/chunks/", tags=["ChromaDB"])
+async def view_all_chunks(limit: Optional[int] = None):
+    """View all chunks stored in ChromaDB"""
+    try:
+        chunks_data = await chroma_service.get_all_chunks(limit=limit)
+        return chunks_data
+    except Exception as e:
+        logger.error(f"Failed to retrieve chunks: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve chunks: {str(e)}")
+
+
+@app.get("/chunks/document/{document_url:path}", tags=["ChromaDB"])
+async def view_chunks_by_document(document_url: str, limit: Optional[int] = None):
+    """View chunks for a specific document"""
+    try:
+        doc_id = hackrx_service._create_document_id(document_url)
+        chunks_data = await chroma_service.get_chunks_by_document(doc_id, limit=limit)
+        
+        return {
+            "document_url": document_url,
+            "document_id": doc_id[:10] + "...",
+            **chunks_data
+        }
+    except Exception as e:
+        logger.error(f"Failed to retrieve chunks for document: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve chunks for document: {str(e)}")
+
+
+@app.get("/chunks/stats", tags=["ChromaDB"])
+async def get_chunks_statistics():
+    """Get statistics about chunks in ChromaDB"""
+    try:
+        total_count = chroma_service.get_collection_count()
+        
+        # Get sample of chunks to analyze document distribution
+        sample_chunks = await chroma_service.get_all_chunks()
+        
+        # Count documents
+        document_ids = set()
+        for chunk in sample_chunks.get("chunks", []):
+            if "document_id" in chunk.get("metadata", {}):
+                document_ids.add(chunk["metadata"]["document_id"])
+        
+        return {
+            "total_chunks": total_count,
+            "unique_documents": len(document_ids),
+            "collection_name": chroma_service.collection.name if chroma_service.collection else "N/A",
+            "sample_size": len(sample_chunks.get("chunks", []))
+        }
+    except Exception as e:
+        logger.error(f"Failed to get chunks statistics: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get statistics: {str(e)}")
 
 
 # --- Exception Handlers (Unchanged) ---
