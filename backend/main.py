@@ -87,7 +87,7 @@ async def get_system_status():
 
 
 # --- New Hackathon Specific Endpoint ---
-@app.post("api/v1/hackrx/run", response_model=HackRXResponse, tags=["Hackathon"])
+@app.post("/hackrx/run", response_model=HackRXResponse, tags=["Hackathon"])
 async def run_hackathon_submission(request: HackRXRequest):
     """
     The official endpoint for the HackRx 6.0 challenge.
