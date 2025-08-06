@@ -57,10 +57,21 @@ class HackRxService:
         else:
             logger.info(f"Cache HIT for document {doc_id[:10]}.... Skipping ingestion.")
 
-        final_answers = []
-        for question in questions:
-            answer = await self._get_answer_for_question(doc_id, question)
-            final_answers.append(answer)
+        # Get context for all questions (they use the same document)
+        logger.info(f"Searching for context for {len(questions)} questions in doc: '{doc_id[:10]}...'")
+        context_results = await chroma_service.search_similar(
+            query=" ".join(questions),  # Combine all questions for better context retrieval
+            n_results=5,  # Get more results since we have multiple questions
+            where_filter={"document_id": doc_id}
+        )
+        context_chunks = [result.content for result in context_results]
+        
+        if not context_chunks:
+            logger.warning("No relevant context found in ChromaDB for the questions.")
+            final_answers = ["Could not find relevant information in the provided document to answer the question."] * len(questions)
+        else:
+            # Answer all questions in a single batch API call
+            final_answers = await llm_service.generate_batch_answers(questions, context_chunks)
 
         return HackRXResponse(answers=final_answers)
 
