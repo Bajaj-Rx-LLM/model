@@ -13,6 +13,8 @@
 secrets/
 config/secrets.*
 
+backend/data/chroma_db
+
 # Python
 __pycache__/
 *.py[cod]
