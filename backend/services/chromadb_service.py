@@ -83,7 +83,7 @@ class ChromaDBService:
     async def search_similar(
         self, 
         query: str, 
-        n_results: int = 5,
+        n_results: int = 10,
         where_filter: Optional[Dict[str, Any]] = None
     ) -> List[SearchResult]:
         """Search for similar documents"""

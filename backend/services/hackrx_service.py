@@ -61,7 +61,7 @@ class HackRxService:
         logger.info(f"Searching for context for {len(questions)} questions in doc: '{doc_id[:10]}...'")
         context_results = await chroma_service.search_similar(
             query=" ".join(questions),  # Combine all questions for better context retrieval
-            n_results=5,  # Get more results since we have multiple questions
+            n_results=10,  # Get more results since we have multiple questions
             where_filter={"document_id": doc_id}
         )
         context_chunks = [result.content for result in context_results]
