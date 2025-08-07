@@ -1,0 +1,24 @@
+# FastAPI and Web Server
+fastapi
+uvicorn[standard]
+python-dotenv
+
+# LangChain and Agent Framework
+langchain
+langchain-openai
+langgraph
+
+# Vector Database and Embeddings
+chromadb
+sentence-transformers
+
+# Document Processing
+pdfplumber
+python-docx
+requests
+
+# Data Validation
+pydantic
+
+# Asynchronous File Handling
+aiofiles

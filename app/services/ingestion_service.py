@@ -5,21 +5,40 @@ from typing import List, Dict, Any, Tuple
 import tempfile
 import pdfplumber
 from docx import Document as DocxDocument
-from email import message_from_string
-from email.policy import default as email_policy
-from models.schemas import DocumentType
 import requests
 from langchain.text_splitter import RecursiveCharacterTextSplitter
+
+from ..models.schemas import DocumentType
+from ..models.config import settings
 
 logger = logging.getLogger(__name__)
 
 class DocumentIngestionService:
     def __init__(self):
-        self.supported_extensions = {'.pdf', '.docx', '.eml', '.txt'}
+        self.supported_extensions = {'.pdf', '.docx', '.txt'}
         self.text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=int(os.getenv("CHUNK_SIZE", "500")),
-            chunk_overlap=int(os.getenv("CHUNK_OVERLAP", "100"))
+            chunk_size=settings.chunk_size,
+            chunk_overlap=settings.chunk_overlap
         )
+        # --- ADD THIS HEADER ---
+        # This header makes our request look like it's coming from a standard browser.
+        self.download_headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+
+    def process_document_from_url(self, url: str) -> Tuple[List[str], List[Dict[str, Any]], List[str]]:
+        """Downloads a PDF from a URL and processes it."""
+        logger.info(f"Downloading document from URL: {url}")
+        try:
+            # --- USE THE HEADER IN THE REQUEST ---
+            response = requests.get(url, headers=self.download_headers, timeout=30)
+            response.raise_for_status()
+            file_content = response.content
+            filename = os.path.basename(url.split('?')[0])
+            return self.process_uploaded_file(file_content, filename)
+        except requests.RequestException as e:
+            logger.error(f"Failed to download file from URL {url}: {e}")
+            raise ValueError(f"Could not download file from URL: {e}") from e
 
     def process_uploaded_file(
         self, 
@@ -70,13 +89,10 @@ class DocumentIngestionService:
     def _extract_pdf_text(self, file_content: bytes) -> str:
         temp_path = ""
         try:
-            # Create a temporary file, but tell it NOT to delete when closed
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
                 temp_file.write(file_content)
-                temp_path = temp_file.name # Get the path of the created file
+                temp_path = temp_file.name
             
-            # At this point, the 'with' block is finished, so the file is closed and unlocked.
-            # Now we can safely open it with pdfplumber using its path.
             text_content = []
             with pdfplumber.open(temp_path) as pdf:
                 for page in pdf.pages:
@@ -85,14 +101,12 @@ class DocumentIngestionService:
                         text_content.append(page_text)
             return "\n\n".join(text_content)
         finally:
-            # Manually clean up the temporary file after we are done
             if temp_path and os.path.exists(temp_path):
                 os.remove(temp_path)
 
     def _extract_docx_text(self, file_content: bytes) -> str:
         temp_path = ""
         try:
-            # Apply the same robust pattern for DOCX files
             with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as temp_file:
                 temp_file.write(file_content)
                 temp_path = temp_file.name
@@ -102,17 +116,5 @@ class DocumentIngestionService:
         finally:
             if temp_path and os.path.exists(temp_path):
                 os.remove(temp_path)
-
-    def process_document_from_url(self, url: str) -> Tuple[List[str], List[Dict[str, Any]], List[str]]:
-        logger.info(f"Downloading PDF from URL: {url}")
-        try:
-            response = requests.get(url, timeout=30)
-            response.raise_for_status()
-            file_content = response.content
-            filename = os.path.basename(url.split('?')[0])
-            return self.process_uploaded_file(file_content, filename)
-        except requests.RequestException as e:
-            logger.error(f"Failed to download file from URL {url}: {e}")
-            raise ValueError(f"Could not download file from URL: {e}") from e
 
 ingestion_service = DocumentIngestionService()
