@@ -1,0 +1,26 @@
+[
+  {
+    "id": "rfc_2119_1",
+    "document": "The key words 'MUST', 'MUST NOT', 'REQUIRED', 'SHALL', 'SHALL NOT', 'SHOULD', 'SHOULD NOT', 'RECOMMENDED', 'MAY', and 'OPTIONAL' in this document are to be interpreted as described in RFC 2119.",
+    "metadata": {
+      "source": "RFC 2119",
+      "section": "1"
+    }
+  },
+  {
+    "id": "rfc_2119_2",
+    "document": "1. MUST This word, or the terms 'REQUIRED' or 'SHALL', mean that the definition is an absolute requirement of the specification.",
+    "metadata": {
+      "source": "RFC 2119",
+      "section": "2"
+    }
+  },
+  {
+    "id": "rfc_8174_1",
+    "document": "BCP 14 when used with RFC 2119 language provides a clear framework for interoperability.",
+    "metadata": {
+      "source": "RFC 8174",
+      "section": "Abstract"
+    }
+  }
+]

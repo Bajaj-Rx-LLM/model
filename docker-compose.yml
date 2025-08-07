@@ -1,3 +1,4 @@
+<<<<<<< Updated upstream
 version: '3.8'
 
 services:
@@ -24,3 +25,27 @@ volumes:
     driver: local
   logs:
     driver: local
+=======
+version: '3.9'
+
+services:
+  chromadb:
+    image: chromadb/chroma:latest
+    restart: unless-stopped # Always restart unless explicitly stopped
+    ports:
+      - "8000:8000" # Host_port:Container_port
+    volumes:
+      - chromadb_data:/chroma/chroma # Named volume for persistence
+    environment:
+      # Optional environment variables
+      - IS_PERSISTENT=TRUE
+      - ANONYMIZED_TELEMETRY=FALSE
+    healthcheck: # Basic healthcheck to ensure Chroma is ready
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  chromadb_data: # Define the named volume
+>>>>>>> Stashed changes
