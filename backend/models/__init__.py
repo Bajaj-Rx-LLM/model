@@ -9,6 +9,8 @@ from .schemas import (
     ErrorResponse,
     HackRXRequest,
     HackRXResponse,
+    HackRXTextRequest,
+    HackRXTextResponse,
     PolicyQuestionsRequest,
     PolicyQuestionsResponse
 )
@@ -23,6 +25,8 @@ __all__ = [
     "ErrorResponse",
     "HackRXRequest",
     "HackRXResponse",
+    "HackRXTextRequest",
+    "HackRXTextResponse",
     "PolicyQuestionsRequest",
     "PolicyQuestionsResponse",
 ]

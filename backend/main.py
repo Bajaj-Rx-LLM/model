@@ -22,9 +22,11 @@ from models import (
     UploadResponse,
     ErrorResponse,
     HackRXRequest,
-    HackRXResponse
+    HackRXResponse,
+    HackRXTextRequest,
+    HackRXTextResponse
 )
-from services import chroma_service, ingestion_service, hackrx_service
+from services import chroma_service, ingestion_service, hackrx_service, text_processing_service
 from agents import coordinator
 
 # Configure logging
@@ -49,8 +51,9 @@ async def lifespan(app: FastAPI):
 
 # Create FastAPI app
 app = FastAPI(
-    title="Agentic RAG System & Hackathon Endpoint",
-    version="1.1.0",
+    title="Agentic RAG System - HackRX 6.0 Edition",
+    description="Advanced RAG system with direct text processing for HackRX 6.0 challenge. Supports both direct text input and legacy URL-based processing.",
+    version="2.0.0",
     lifespan=lifespan
 )
 
@@ -66,8 +69,33 @@ app.add_middleware(
 # --- Existing Endpoints (Unchanged) ---
 @app.get("/health", tags=["System"])
 async def health_check():
-    # ... (code remains the same)
-    return {"status": "healthy"}
+    """System health check endpoint"""
+    return {
+        "status": "healthy",
+        "service": "Agentic RAG System - HackRX 6.0 Edition",
+        "version": "2.0.0",
+        "timestamp": time.time(),
+        "features": {
+            "direct_text_processing": True,
+            "url_based_processing": True,
+            "entity_extraction": True,
+            "predefined_qa": True,
+            "custom_qa": True
+        }
+    }
+
+@app.get("/api/v1/test", tags=["System"])
+async def test_endpoint():
+    """Simple test endpoint to verify API functionality"""
+    return {
+        "message": "HackRX 6.0 API is working correctly",
+        "primary_endpoint": "/api/v1/hackrx/run",
+        "expected_input": {
+            "input_document": "Your document content as a string",
+            "questions": ["Optional list of custom questions"]
+        },
+        "timestamp": time.time()
+    }
 
 @app.post("/upload/", response_model=UploadResponse, tags=["Documents"])
 async def upload_document(
@@ -86,19 +114,61 @@ async def get_system_status():
     return {"status": "operational"}
 
 
-# --- New Hackathon Specific Endpoint ---
-@app.post("/hackrx/run", response_model=HackRXResponse, tags=["Hackathon"])
-async def run_hackathon_submission(request: HackRXRequest):
+# --- New Primary Endpoint for Direct Text Processing ---
+@app.post("/api/v1/hackrx/run", response_model=HackRXTextResponse, tags=["HackRX Primary"])
+async def hackrx_run_text_processing(request: HackRXTextRequest):
     """
-    The official endpoint for the HackRx 6.0 challenge.
-    Receives a document URL and a list of questions, returns a list of answers.
+    Primary endpoint for HackRX 6.0 challenge - Direct text processing
+    
+    Accepts document content as a string and returns comprehensive analysis:
+    - Entity extraction
+    - Predefined question answering
+    - Custom question answering (optional)
+    - Document summary and processing metadata
+    
+    Expected request format:
+    {
+        "input_document": "Your document content as a string...",
+        "questions": ["Optional custom questions"]  // Optional field
+    }
     """
-    logger.info(f"Received /hackrx/run request for document: {request.documents[0]}")
+    logger.info(f"Received /api/v1/hackrx/run request with document length: {len(request.input_document)} chars")
+    
+    try:
+        response = await text_processing_service.process_text_request(request)
+        
+        if response.status == "error":
+            logger.error(f"Text processing failed: {response.message}")
+            raise HTTPException(status_code=400, detail=response.message)
+        
+        logger.info(f"Successfully processed text request in {response.processing_time:.2f} seconds")
+        return response
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Critical error in /api/v1/hackrx/run endpoint: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"An unexpected internal error occurred: {str(e)}"
+        )
+
+
+# --- Legacy Endpoint for URL-based Processing (Backwards Compatibility) ---
+@app.post("/hackrx/run", response_model=HackRXResponse, tags=["HackRX Legacy"])
+async def hackrx_run_legacy(request: HackRXRequest):
+    """
+    Legacy endpoint for URL-based document processing (backwards compatibility)
+    
+    This endpoint processes documents from URLs and is maintained for backwards compatibility.
+    For new implementations, use /api/v1/hackrx/run with direct text input.
+    """
+    logger.info(f"Received legacy /hackrx/run request for document: {request.documents[0]}")
     try:
         response = await hackrx_service.process_request(request)
         return response
     except Exception as e:
-        logger.error(f"Critical error in /hackrx/run endpoint: {e}", exc_info=True)
+        logger.error(f"Critical error in legacy /hackrx/run endpoint: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail=f"An unexpected internal error occurred: {str(e)}"

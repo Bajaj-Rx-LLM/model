@@ -49,12 +49,26 @@ class QueryResponse(BaseModel):
     search_results: List[SearchResult]
     processing_time: float
 
+# New schema for direct text input
+class HackRXTextRequest(BaseModel):
+    input_document: str = Field(..., description="Document content as a single string")
+    questions: Optional[List[str]] = Field(None, description="Optional list of specific questions to answer")
+
 class HackRXRequest(BaseModel):
     documents: List[str] = Field(..., description="List of URLs to PDF documents")
     questions: List[str] = Field(..., description="List of questions to answer")
 
 class HackRXResponse(BaseModel):
     answers: List[str] = Field(..., description="List of answers corresponding to the questions")
+
+class HackRXTextResponse(BaseModel):
+    status: str = Field(..., description="Processing status")
+    message: str = Field(..., description="Response message")
+    document_summary: Dict[str, Any] = Field(..., description="Summary of processed document")
+    extracted_entities: Dict[str, Any] = Field(..., description="Entities extracted from document")
+    predefined_qa: Dict[str, str] = Field(..., description="Answers to predefined questions")
+    custom_qa: Optional[Dict[str, str]] = Field(None, description="Answers to custom questions if provided")
+    processing_time: float = Field(..., description="Time taken to process the request")
 
 class PolicyQuestionsRequest(BaseModel):
     questions: List[str] = Field(..., description="List of National Parivar Mediclaim Plus Policy questions")
