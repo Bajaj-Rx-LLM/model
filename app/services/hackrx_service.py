@@ -1,31 +1,53 @@
 import logging
 import hashlib
-from typing import List
+from typing import List, Dict
 import asyncio
 
 from .chromadb_service import chroma_service
 from .ingestion_service import ingestion_service
 from .llm_service import llm_service
-from models.schemas import HackRXRequest, HackRXResponse
+from ..models.schemas import HackRXRequest, HackRXResponse
 
 logger = logging.getLogger(__name__)
+
+# In-memory cache for storing (doc_id, question) -> answer
+qa_cache: Dict[str, str] = {}
 
 class HackRxService:
     def _create_document_id(self, url: str) -> str:
         return hashlib.sha256(url.encode()).hexdigest()
 
     async def _get_answer_for_question(self, doc_id: str, question: str) -> str:
-        logger.info(f"Searching for context for question: '{question[:50]}...' in doc: '{doc_id[:10]}...'")
+        """
+        Performs a dedicated search for a single question and generates an answer.
+        This function is now designed to be run concurrently for multiple questions.
+        """
+        # 1. Check the Q&A cache first
+        cache_key = f"{doc_id}::{question}"
+        if cache_key in qa_cache:
+            logger.info(f"Q&A Cache HIT for question: '{question[:50]}...'")
+            return qa_cache[cache_key]
+
+        logger.info(f"Q&A Cache MISS. Searching context for: '{question[:50]}...'")
+        
+        # 2. Perform a focused search for the individual question
         context_results = await chroma_service.search_similar(
             query=question,
-            n_results=3,
+            n_results=5, # Retrieve 5 relevant chunks for good context
             where_filter={"document_id": doc_id}
         )
+        
         context_chunks = [result.content for result in context_results]
+        
         if not context_chunks:
             logger.warning("No relevant context found in ChromaDB for the question.")
             return "Could not find relevant information in the provided document to answer the question."
+            
+        # 3. Use the simple answer generation for a direct response
         answer = await llm_service.generate_simple_answer(question, context_chunks)
+        
+        # 4. Store the new answer in the cache before returning
+        qa_cache[cache_key] = answer
         return answer
 
     async def process_request(self, request: HackRXRequest) -> HackRXResponse:
@@ -39,13 +61,10 @@ class HackRxService:
         if not existing_chunks:
             logger.info(f"Cache MISS for document {doc_id[:10]}.... Processing from URL.")
             try:
-                # Run the synchronous ingestion function in a separate thread
-                # to avoid blocking the main async application.
                 chunks, metadatas, chunk_ids = await asyncio.to_thread(
                     ingestion_service.process_document_from_url, doc_url
                 )
                 
-                # Add the document_id to every chunk's metadata
                 for meta in metadatas:
                     meta['document_id'] = doc_id
                 
@@ -57,21 +76,12 @@ class HackRxService:
         else:
             logger.info(f"Cache HIT for document {doc_id[:10]}.... Skipping ingestion.")
 
-        # Get context for all questions (they use the same document)
-        logger.info(f"Searching for context for {len(questions)} questions in doc: '{doc_id[:10]}...'")
-        context_results = await chroma_service.search_similar(
-            query=" ".join(questions),  # Combine all questions for better context retrieval
-            n_results=10,  # Get more results since we have multiple questions
-            where_filter={"document_id": doc_id}
-        )
-        context_chunks = [result.content for result in context_results]
+        # --- NEW CONCURRENT LOGIC ---
+        # Create a list of tasks, one for each question.
+        tasks = [self._get_answer_for_question(doc_id, q) for q in questions]
         
-        if not context_chunks:
-            logger.warning("No relevant context found in ChromaDB for the questions.")
-            final_answers = ["Could not find relevant information in the provided document to answer the question."] * len(questions)
-        else:
-            # Answer all questions in a single batch API call
-            final_answers = await llm_service.generate_batch_answers(questions, context_chunks)
+        # Run all tasks concurrently and wait for all of them to complete.
+        final_answers = await asyncio.gather(*tasks)
 
         return HackRXResponse(answers=final_answers)
 
